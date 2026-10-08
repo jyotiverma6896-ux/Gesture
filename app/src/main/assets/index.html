@@ -20,6 +20,8 @@
   #vol{height:10px;background:var(--card);border-radius:5px;margin-top:10px;overflow:hidden}
   #volbar{height:100%;width:50%;background:var(--acc);transition:width .2s}
   p.h{color:var(--mut);margin:10px 0 0;font-size:13px;line-height:1.5}
+  .sm{display:inline-block;width:auto;margin:6px 4px;padding:10px 14px;font-size:14px}
+  #tp{display:none;max-width:480px;margin:8px auto;padding:10px;background:var(--card);border-radius:12px;font-size:14px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -27,21 +29,29 @@
 <div id="cam"><div id="status">Start dabao</div><video id="v" playsinline muted></video><canvas id="c"></canvas></div>
 <a id="openlink" target="_blank" style="display:none;max-width:480px;margin:12px auto;padding:14px;border-radius:12px;background:#ffd166;color:#241a00;font-weight:700;text-align:center;text-decoration:none"></a>
 <button id="go">Camera chalu karo</button>
+<div class="row" style="text-align:center"><button id="acc" class="sm" style="display:none"></button><button id="train" class="sm" style="background:#ffd166">Train karo</button></div>
+<div id="tp"><div id="tt"></div><button id="rb" class="sm">Record (3 sec)</button><button id="rs" class="sm" style="background:#555;color:#fff">Reset</button></div>
 
 <div class="row">
   <div id="pager"><div id="track"></div></div>
   <div id="vol"><div id="volbar"></div></div>
-  <p class="h">Khula haath upar/neeche/left/right karo.<br>
-  Ye gesture doosre app par asli swipe karta hai (adb se). ✊ 1 sec = tap/pause.<br>Is page ko split-screen ya pop-up mein rakho.</p>
+  <p class="h">Khula haath: upar/neeche/left/right = swipe.<br>
+Hold 1 sec: ✊ mutthi = tap, ☝️ ek ungli = Back, ✌️ do ungli = Home, 3 ungli = Recents, 🤙 chhoti ungli = Notifications, 🤟 index+chhoti = double tap.<br>
+Halka hilane pe bhi swipe ho to <b>Train karo</b> dabao.</p>
 </div>
 
 <script type="module">
 import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
 // ===== SETTINGS =====
-const SWIPE_WINDOW = 500, SWIPE_X = 0.20, SWIPE_Y = 0.10, SWIPE_COOLDOWN = 600, HOLD_MS = 1000;
+const SWIPE_WINDOW = 500, SWIPE_X = 0.20, SWIPE_Y = 0.10, SWIPE_COOLDOWN = 800, HOLD_MS = 900;
 const APPS = {              // gesture -> [naam, link]
-  FIST: ["Tap (pause/play)", "tap"],   // mutthi 1 sec = screen ke beech mein tap
+  FIST: ["Tap", "tap"],
+  ONE_FINGER: ["Back", "back"],
+  TWO_FINGERS: ["Home", "home"],
+  THREE_FINGERS: ["Recents", "recents"],
+  PINKY: ["Notifications", "notif"],
+  ROCK: ["Double tap", "dtap"],
 };
 // =====================
 
@@ -62,6 +72,8 @@ function classify(lm){
   if (i && !m && !r && !p) return "ONE_FINGER";
   if (i && m && !r && !p) return "TWO_FINGERS";
   if (i && m && r && !p) return "THREE_FINGERS";
+  if (!i && !m && !r && p) return "PINKY";
+  if (i && !m && !r && p) return "ROCK";
   if (!i && !m && !r && !p) return "FIST";
   return "NONE";
 }
@@ -110,18 +122,33 @@ function onSwipe(d){
   if (d==="down")  vol = Math.max(vol-20, 0);
   render();
 }
+let TH = { x: SWIPE_X, y: SWIPE_Y };
+try { const k = JSON.parse(localStorage.getItem("hg_cal") || "null"); if (k && k.x && k.y) TH = k; } catch(e){}
+const OPP = { up:"down", down:"up", left:"right", right:"left" };
+let lastDir = null, rec = null;
+function peak(a, ax){
+  let m = 0;
+  for (let i=0;i<a.length;i++) for (let j=i+1;j<a.length;j++){
+    if (a[j].t - a[i].t > SWIPE_WINDOW) break;
+    m = Math.max(m, Math.abs(a[j][ax] - a[i][ax]));
+  }
+  return m;
+}
 function step(lm, now){
   const g = classify(lm), palm = lm[9];
+  if (rec){ if (g==="OPEN_PALM") rec.push({t:now, x:1-palm.x, y:palm.y}); return; }
   if (g==="OPEN_PALM"){
-    // x mirror: video dikhta hai mirrored, isliye x ulta karke natural direction
     hist.push({t:now, x:1-palm.x, y:palm.y});
     hist = hist.filter(h => now-h.t <= SWIPE_WINDOW);
     if (hist.length>=3 && now-lastSwipe>SWIPE_COOLDOWN){
       const dx = hist.at(-1).x-hist[0].x, dy = hist.at(-1).y-hist[0].y;
       let d = null;
-      if (Math.abs(dy) > SWIPE_Y && Math.abs(dy) > Math.abs(dx)*1.1) d = dy>0 ? "down":"up";
-      else if (Math.abs(dx) > SWIPE_X && Math.abs(dx) > Math.abs(dy)*1.5) d = dx>0 ? "right":"left";
-      if (d){ onSwipe(d); lastSwipe = now; hist = []; }
+      if (Math.abs(dy) > TH.y && Math.abs(dy) > Math.abs(dx)*1.1) d = dy>0 ? "down":"up";
+      else if (Math.abs(dx) > TH.x && Math.abs(dx) > Math.abs(dy)*1.5) d = dx>0 ? "right":"left";
+      if (d){
+        if (!(lastDir === OPP[d] && now-lastSwipe < 1200)){ onSwipe(d); lastSwipe = now; lastDir = d; }
+        hist = [];
+      }
     }
   } else hist = [];
 
@@ -133,6 +160,44 @@ function step(lm, now){
       if (held>=HOLD_MS){ fired=true; send(APPS[g][1]); st.textContent = APPS[g][0]+" bhej diya"; }
     }
   } else { cur=null; fired=false; }
+}
+
+// ===== TRAINING =====
+const steps = [
+  ["y","UPAR-NEECHE bahut HALKA hilao (jitna galti se ho jata hai)"],
+  ["y","UPAR-NEECHE NORMAL swipe karo (jaisa chahiye)"],
+  ["x","LEFT-RIGHT bahut HALKA hilao"],
+  ["x","LEFT-RIGHT NORMAL swipe karo"]];
+let ti = -1, res = [];
+function showStep(pre){ $("tt").textContent = (pre||"") + `Step ${ti+1}/4: ${steps[ti][1]}. Khula haath dikhao, 'Record' dabao, 3 sec me 2-3 baar karo.`; }
+function calc(a, b){ return b > a*1.25 ? a + 0.4*(b-a) : null; }
+function finishTrain(){
+  const y = calc(res[0],res[1]), x = calc(res[2],res[3]);
+  ti = -1; st.textContent = "Haath dikhao";
+  if (y===null || x===null){ $("tt").textContent = "Halka aur normal me farak kam tha. Dobara 'Train karo' dabao: halka bahut chhota, normal saaf bada."; return; }
+  TH = { y: Math.max(y,0.04), x: Math.max(x,0.04) };
+  try{ localStorage.setItem("hg_cal", JSON.stringify(TH)); }catch(e){}
+  $("tt").textContent = `Save ho gaya ✅ upar-neeche ${TH.y.toFixed(2)}, left-right ${TH.x.toFixed(2)}. Ab halka hilane pe swipe nahi hoga.`;
+}
+$("train").onclick = () => { ti = 0; res = []; $("tp").style.display = "block"; showStep(); };
+$("rs").onclick = () => { TH = {x:SWIPE_X, y:SWIPE_Y}; try{ localStorage.removeItem("hg_cal"); }catch(e){} ti = -1; $("tt").textContent = "Default settings wapas aa gayi."; };
+$("rb").onclick = () => {
+  if (ti < 0 || rec) return;
+  rec = []; st.textContent = "Recording... haath hilao";
+  setTimeout(() => {
+    const m = peak(rec, steps[ti][0]); rec = null; st.textContent = "Haath dikhao";
+    if (m < 0.01){ showStep("Khula haath nahi dikha, dobara. "); return; }
+    res.push(m); ti++;
+    if (ti < 4) showStep(`Naap: ${m.toFixed(2)}. `); else finishTrain();
+  }, 3000);
+};
+
+// ===== ACCESSIBILITY ON/OFF BUTTON =====
+if (window.Android){
+  const ab = $("acc"); ab.style.display = "inline-block";
+  const upd = () => { ab.textContent = Android.ready() ? "Accessibility OFF karo (UPI ke liye)" : "Accessibility ON karo"; };
+  ab.onclick = () => { if (Android.ready()) Android.stopService(); else Android.openAccessibility(); setTimeout(upd, 500); };
+  upd(); setInterval(upd, 1500);
 }
 
 $("go").onclick = async () => {

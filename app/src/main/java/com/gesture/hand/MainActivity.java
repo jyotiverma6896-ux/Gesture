@@ -36,6 +36,7 @@ public class MainActivity extends Activity {
     });
     wv.addJavascriptInterface(new Object(){
       @JavascriptInterface public boolean cmd(String d){ return GestureService.run(d); }
+      @JavascriptInterface public void stopService(){ GestureService.stop(); }
       @JavascriptInterface public boolean ready(){ return GestureService.inst != null; }
       @JavascriptInterface public void openAccessibility(){
         runOnUiThread(() -> {
@@ -49,5 +50,17 @@ public class MainActivity extends Activity {
   @Override protected void onUserLeaveHint(){
     if (GestureService.inst != null)
       enterPictureInPictureMode(new PictureInPictureParams.Builder().setAspectRatio(new Rational(3,4)).build());
+  }
+  @Override protected void onStop(){
+    super.onStop();
+    // PiP window cross (X) dabane par app poori band
+    if (isInPictureInPictureMode()) finishAndRemoveTask();
+  }
+  @Override protected void onDestroy(){
+    super.onDestroy();
+    if (isFinishing()){
+      GestureService.stop();          // accessibility bhi band
+      if (wv != null){ wv.destroy(); wv = null; }
+    }
   }
 }
